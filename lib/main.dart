@@ -42,6 +42,7 @@ Future<void> _speakWithGender(String text, String gender, {dynamic availableVoic
     }
   }
 
+  await flutterTts.setEngine("com.iflytek.speechsuite");
   await flutterTts.setLanguage("zh-CN");
   if (voiceName != null) {
     await flutterTts.setVoice({"name": voiceName, "locale": "zh-CN"});
