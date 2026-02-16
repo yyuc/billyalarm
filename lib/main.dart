@@ -814,6 +814,35 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ]),
                   const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: MyApp.primaryColor.withOpacity(0.3),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            '闹铃起始日期',
+                            style: TextStyle(
+                              color: MyApp.textColor.withOpacity(0.6),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: MyApp.primaryColor.withOpacity(0.3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   Row(children: [
                     Expanded(
                       child: _buildDateButton(
@@ -831,7 +860,36 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                   ]),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: MyApp.primaryColor.withOpacity(0.3),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            '每日起始时间',
+                            style: TextStyle(
+                              color: MyApp.textColor.withOpacity(0.6),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: MyApp.primaryColor.withOpacity(0.3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   Row(children: [
                     Expanded(
                       child: _buildTimeButton(
@@ -849,9 +907,38 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                   ]),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: MyApp.primaryColor.withOpacity(0.3),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            '生效时间',
+                            style: TextStyle(
+                              color: MyApp.textColor.withOpacity(0.6),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: MyApp.primaryColor.withOpacity(0.3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   Text(
-                    '生效时间：${_getDateRangeText()}$rangeLabel',
+                    '${_getDateRangeText()}$rangeLabel',
                     style: TextStyle(
                       color: MyApp.textColor.withOpacity(0.7),
                       fontSize: 13,
