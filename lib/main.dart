@@ -12,43 +12,11 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 final FlutterTts flutterTts = FlutterTts();
 
-Future<void> _speakWithGender(String text, String gender, {dynamic availableVoices}) async {
-  String? voiceName;
-  double pitch = 1.0;
-  double speechRate = 0.5;
-
-  if (availableVoices != null && availableVoices is List && availableVoices.isNotEmpty) {
-    final lowerGender = gender.toLowerCase();
-    for (final v in availableVoices) {
-      try {
-        final map = v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
-        final name = (map['name'] ?? map['voice'] ?? '').toString().toLowerCase();
-        final genderField = (map['gender'] ?? '').toString().toLowerCase();
-        if (gender == 'default') break;
-        if (lowerGender == 'male') {
-          if (name.contains('male') || name.contains('man') || name.contains('男') ||
-              genderField.contains('male') || genderField.contains('man')) {
-            voiceName = map['name']?.toString();
-            break;
-          }
-        } else if (lowerGender == 'female') {
-          if (name.contains('female') || name.contains('woman') || name.contains('女') ||
-              genderField.contains('female') || genderField.contains('woman')) {
-            voiceName = map['name']?.toString();
-            break;
-          }
-        }
-      } catch (_) {}
-    }
-  }
-
+Future<void> _speakWithGender(String text) async {
   await flutterTts.setEngine("com.iflytek.speechsuite");
   await flutterTts.setLanguage("zh-CN");
-  if (voiceName != null) {
-    await flutterTts.setVoice({"name": voiceName, "locale": "zh-CN"});
-  }
-  await flutterTts.setSpeechRate(speechRate);
-  await flutterTts.setPitch(pitch);
+  await flutterTts.setSpeechRate(0.5);
+  await flutterTts.setPitch(1.0);
   await flutterTts.speak(text);
 }
 
@@ -71,20 +39,17 @@ void main() async {
         try {
           final Map parsed = jsonDecode(payload);
           final text = parsed['text']?.toString() ?? '';
-          final gender = parsed['gender']?.toString() ?? 'default';
           final prefs = await SharedPreferences.getInstance();
           final enableTTS = prefs.getBool('enableTTS') ?? true;
           if (enableTTS) {
-            final voices = await flutterTts.getVoices;
-            await _speakWithGender(text, gender, availableVoices: voices);
+            await _speakWithGender(text);
           }
         } catch (_) {
           // 如果 payload 不是 JSON，直接播报原始字符串
           final prefs = await SharedPreferences.getInstance();
           final enableTTS = prefs.getBool('enableTTS') ?? true;
           if (enableTTS) {
-            final voices = await flutterTts.getVoices;
-            await _speakWithGender(payload, 'default', availableVoices: voices);
+            await _speakWithGender(payload);
           }
         }
       }
@@ -370,82 +335,20 @@ class _HomePageState extends State<HomePage> {
     return scheduled;
   }
 
-  // 语音播报：优先尝试匹配 voice，否则用 pitch 回退
-  static Future<void> _speakWithGender(String text, String gender,
-      {List<dynamic>? availableVoices}) async {
-    double pitch = 1.0;
-    String? voiceName;
-
-    if (gender == 'male') {
-      pitch = 0.8;
-    } else if (gender == 'female') {
-      pitch = 1.2;
-    } else {
-      pitch = 1.0;
-    }
-
-    if (availableVoices != null && availableVoices.isNotEmpty) {
-      final lowerGender = gender.toLowerCase();
-      for (final v in availableVoices) {
-        try {
-          final map = v is Map ? v : Map<String, dynamic>.from(v);
-          final name = (map['name'] ?? map['voice'] ?? '').toString().toLowerCase();
-          final genderField = (map['gender'] ?? '').toString().toLowerCase();
-          if (lowerGender == 'male') {
-            if (name.contains('male') ||
-                name.contains('man') ||
-                name.contains('男') ||
-                genderField.contains('male') ||
-                genderField.contains('man')) {
-              voiceName = map['name']?.toString();
-              break;
-            }
-          } else if (lowerGender == 'female') {
-            if (name.contains('female') ||
-                name.contains('woman') ||
-                name.contains('女') ||
-                genderField.contains('female') ||
-                genderField.contains('woman')) {
-              voiceName = map['name']?.toString();
-              break;
-            }
-          }
-        } catch (_) {
-          continue;
-        }
-      }
-    }
-
-    try {
-      if (voiceName != null) {
-        await flutterTts.setVoice({'name': voiceName});
-      }
-    } catch (_) {}
-    try {
-      await flutterTts.setPitch(pitch);
-    } catch (_) {}
-    try {
-      await flutterTts.setLanguage("zh-CN");
-      await flutterTts.setSpeechRate(0.5);
-      await flutterTts.speak(text);
-    } catch (_) {}
-  }
-
-  Future<void> _addMinuteItem(int minute, String message, String gender) async {
+  Future<void> _addMinuteItem(int minute, String message) async {
     final idBase = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
-    final item = MinuteItem(minute: minute, message: message, idBase: idBase, voiceGender: gender);
+    final item = MinuteItem(minute: minute, message: message, idBase: idBase, voiceGender: 'default');
     minuteItems.add(item);
     await _saveAll();
     await _scheduleAll();
     setState(() {});
   }
 
-  Future<void> _editMinuteItem(MinuteItem old, int minute, String message, String gender) async {
+  Future<void> _editMinuteItem(MinuteItem old, int minute, String message) async {
     final idx = minuteItems.indexWhere((e) => e.idBase == old.idBase);
     if (idx >= 0) {
       minuteItems[idx].minute = minute;
       minuteItems[idx].message = message;
-      minuteItems[idx].voiceGender = gender;
       await _saveAll();
       await _scheduleAll();
       setState(() {});
@@ -537,7 +440,6 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _pickMinuteAndMessage({MinuteItem? editing}) async {
     _messageController.text = editing?.message ?? "现在是 {hour} 点 {minute} 分";
-    String selectedGender = editing?.voiceGender ?? 'default';
     final int? picked = await showDialog<int>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -551,14 +453,13 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     if (picked == null || !mounted) return;
-    final msg = await showDialog<Map<String, String>>(
+    final message = await showDialog<String>(
       context: context,
       builder: (context) {
         String tempMsg = _messageController.text;
-        String tempGender = selectedGender;
         return StatefulBuilder(builder: (context, setState) {
           return AlertDialog(
-            title: const Text('设置播报文本与声音（支持 {hour} 和 {minute}）'),
+            title: const Text('设置播报文本（支持 {hour} 和 {minute}）'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -568,39 +469,23 @@ class _HomePageState extends State<HomePage> {
                   onChanged: (v) => tempMsg = v,
                   decoration: const InputDecoration(hintText: '例如：现在是 {hour} 点 {minute} 分'),
                 ),
-                const SizedBox(height: 8),
-                Row(children: [
-                  const Text('声音：'),
-                  const SizedBox(width: 8),
-                  DropdownButton<String>(
-                    value: tempGender,
-                    items: const [
-                      DropdownMenuItem(value: 'default', child: Text('系统默认')),
-                      DropdownMenuItem(value: 'male', child: Text('男声')),
-                      DropdownMenuItem(value: 'female', child: Text('女声')),
-                    ],
-                    onChanged: (v) => setState(() => tempGender = v ?? 'default'),
-                  ),
-                ]),
               ],
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
               TextButton(
-                  onPressed: () => Navigator.pop(context, {'msg': tempMsg.trim(), 'gender': tempGender}),
+                  onPressed: () => Navigator.pop(context, tempMsg.trim()),
                   child: const Text('确定')),
             ],
           );
         });
       },
     );
-    if (msg == null || !mounted) return;
-    final message = msg['msg'] ?? '';
-    final gender = msg['gender'] ?? 'default';
+    if (message == null || !mounted) return;
     if (editing == null) {
-      await _addMinuteItem(picked, message, gender);
+      await _addMinuteItem(picked, message);
     } else {
-      await _editMinuteItem(editing, picked, message, gender);
+      await _editMinuteItem(editing, picked, message);
     }
   }
 
@@ -613,7 +498,7 @@ class _HomePageState extends State<HomePage> {
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool('enableTTS') ?? true;
     if (enabled) {
-      await _speakWithGender(payload, item.voiceGender, availableVoices: availableVoices);
+      await _speakWithGender(payload);
     } else {
       const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
         'multi_min_channel',
@@ -642,11 +527,6 @@ class _HomePageState extends State<HomePage> {
     final preview = item.message
         .replaceAll('{hour}', '--')
         .replaceAll('{minute}', item.minute.toString().padLeft(2, '0'));
-    final voiceLabel = item.voiceGender == 'male'
-        ? '男声'
-        : item.voiceGender == 'female'
-            ? '女声'
-            : '默认';
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Padding(
@@ -654,24 +534,11 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Text(
-                  '[$voiceLabel] ',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: MyApp.accentColor.withOpacity(0.8),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    preview,
-                    style: TextStyle(
-                      color: MyApp.textColor.withOpacity(0.7),
-                    ),
-                  ),
-                ),
-              ],
+            Text(
+              preview,
+              style: TextStyle(
+                color: MyApp.textColor.withOpacity(0.7),
+              ),
             ),
             const SizedBox(height: 8),
             Row(
