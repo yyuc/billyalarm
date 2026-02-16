@@ -1,15 +1,13 @@
 // lib/main.dart
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-    FlutterLocalNotificationsPlugin();
 final FlutterTts flutterTts = FlutterTts();
 
 Future<void> _speakWithGender(String text) async {
@@ -25,36 +23,6 @@ void main() async {
 
   tz.initializeTimeZones();
   tz.setLocalLocation(tz.getLocation('Asia/Shanghai'));
-
-  const AndroidInitializationSettings androidInit =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
-  const InitializationSettings initSettings =
-      InitializationSettings(android: androidInit);
-
-  await flutterLocalNotificationsPlugin.initialize(
-    initSettings,
-    onDidReceiveNotificationResponse: (NotificationResponse response) async {
-      final payload = response.payload;
-      if (payload != null && payload.isNotEmpty) {
-        try {
-          final Map parsed = jsonDecode(payload);
-          final text = parsed['text']?.toString() ?? '';
-          final prefs = await SharedPreferences.getInstance();
-          final enableTTS = prefs.getBool('enableTTS') ?? true;
-          if (enableTTS) {
-            await _speakWithGender(text);
-          }
-        } catch (_) {
-          // 如果 payload 不是 JSON，直接播报原始字符串
-          final prefs = await SharedPreferences.getInstance();
-          final enableTTS = prefs.getBool('enableTTS') ?? true;
-          if (enableTTS) {
-            await _speakWithGender(payload);
-          }
-        }
-      }
-    },
-  );
 
   runApp(const MyApp());
 }
@@ -217,8 +185,29 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _loadAll().then((_) async {
       await _loadAvailableVoices();
-      await _scheduleAll();
     });
+    Timer.periodic(const Duration(seconds: 50), (_) {
+      _checkAndSpeak();
+    });
+  }
+
+  void _checkAndSpeak() {
+    if (!mounted) return;
+    final now = DateTime.now();
+    final currentMinute = now.minute;
+    final currentHour = now.hour;
+    
+    if (!_hourInRange(currentHour)) return;
+    
+    for (final item in minuteItems) {
+      if (item.minute == currentMinute) {
+        final text = item.message
+            .replaceAll('{hour}', currentHour.toString())
+            .replaceAll('{minute}', item.minute.toString().padLeft(2, '0'));
+        _speakWithGender(text);
+        break;
+      }
+    }
   }
 
   Future<void> _loadAvailableVoices() async {
@@ -280,51 +269,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _scheduleAll() async {
-    await flutterLocalNotificationsPlugin.cancelAll();
-
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'multi_min_channel',
-      '多分钟点报时',
-      channelDescription: '在指定时间范围内每小时到达选定分钟点播报',
-      importance: Importance.max,
-      priority: Priority.high,
-      playSound: true,
-    );
-    const NotificationDetails platformDetails =
-        NotificationDetails(android: androidDetails);
-
-    // 生成小时列表（支持跨午夜）
-    final List<int> hours = [];
-    if (startHour <= endHour) {
-      for (int h = startHour; h <= endHour; h++) hours.add(h);
-    } else {
-      for (int h = startHour; h < 24; h++) hours.add(h);
-      for (int h = 0; h <= endHour; h++) hours.add(h);
-    }
-
-    for (final item in minuteItems) {
-      for (final h in hours) {
-        final tz.TZDateTime scheduled = _nextInstanceOfTime(h, item.minute);
-        final String text = item.message
-            .replaceAll('{hour}', h.toString())
-            .replaceAll('{minute}', item.minute.toString().padLeft(2, '0'));
-        final payload = jsonEncode({'text': text, 'gender': item.voiceGender});
-        final body = text;
-        final int id = item.idBase + h; // idBase + hour 保证唯一
-        await flutterLocalNotificationsPlugin.zonedSchedule(
-          id,
-          '报时提醒',
-          body,
-          scheduled,
-          platformDetails,
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-          payload: payload,
-          uiLocalNotificationDateInterpretation:
-              UILocalNotificationDateInterpretation.absoluteTime,
-          matchDateTimeComponents: DateTimeComponents.time,
-        );
-      }
-    }
+    // 通知调度已移除，现在使用 Timer 每30秒检查一次
   }
 
   tz.TZDateTime _nextInstanceOfTime(int hour, int minute) {
@@ -492,31 +437,10 @@ class _HomePageState extends State<HomePage> {
   Future<void> _testItemNow(MinuteItem item) async {
     final now = DateTime.now();
     final inRange = _hourInRange(now.hour);
-    final payload = item.message
+    final text = item.message
         .replaceAll('{hour}', now.hour.toString())
         .replaceAll('{minute}', item.minute.toString().padLeft(2, '0'));
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool('enableTTS') ?? true;
-    if (enabled) {
-      await _speakWithGender(payload);
-    } else {
-      const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-        'multi_min_channel',
-        '报时测试',
-        channelDescription: '测试通知',
-        importance: Importance.max,
-        priority: Priority.high,
-      );
-      const NotificationDetails platformDetails =
-          NotificationDetails(android: androidDetails);
-      await flutterLocalNotificationsPlugin.show(
-        item.idBase + 999999,
-        '报时测试',
-        payload,
-        platformDetails,
-        payload: payload,
-      );
-    }
+    await _speakWithGender(text);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('测试已触发（当前小时在范围: $inRange）'),
