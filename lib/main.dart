@@ -556,7 +556,7 @@ class _HomePageState extends State<HomePage> {
     final rangeLabel =
         '${startHour.toString().padLeft(2, '0')}:00 - ${endHour.toString().padLeft(2, '0')}:00';
     return Scaffold(
-      appBar: AppBar(title: const Text('多分钟点报时（每点可选男女声）')),
+      appBar: AppBar(title: const Text('Billy Alarm')),
       body: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(children: [
