@@ -235,6 +235,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int startHour = 8;
   int endHour = 22;
+  DateTime? startDate;
+  DateTime? endDate;
   bool enableTTS = true;
   List<MinuteItem> minuteItems = [];
   final TextEditingController _messageController = TextEditingController();
@@ -267,6 +269,10 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       startHour = prefs.getInt('startHour') ?? 8;
       endHour = prefs.getInt('endHour') ?? 22;
+      final startDateStr = prefs.getString('startDate');
+      final endDateStr = prefs.getString('endDate');
+      startDate = startDateStr != null ? DateTime.parse(startDateStr) : null;
+      endDate = endDateStr != null ? DateTime.parse(endDateStr) : null;
       enableTTS = prefs.getBool('enableTTS') ?? true;
       final raw = prefs.getString('minute_items') ?? '[]';
       final List decoded = jsonDecode(raw);
@@ -280,6 +286,16 @@ class _HomePageState extends State<HomePage> {
     await prefs.setString('minute_items', encoded);
     await prefs.setInt('startHour', startHour);
     await prefs.setInt('endHour', endHour);
+    if (startDate != null) {
+      await prefs.setString('startDate', startDate!.toIso8601String().split('T')[0]);
+    } else {
+      await prefs.remove('startDate');
+    }
+    if (endDate != null) {
+      await prefs.setString('endDate', endDate!.toIso8601String().split('T')[0]);
+    } else {
+      await prefs.remove('endDate');
+    }
     await prefs.setBool('enableTTS', enableTTS);
   }
 
@@ -474,6 +490,50 @@ class _HomePageState extends State<HomePage> {
       await _saveAll();
       await _scheduleAll();
     }
+  }
+
+  Future<void> _pickStartDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: startDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: '选择开始日期',
+    );
+    if (picked != null) {
+      setState(() => startDate = picked);
+      await _saveAll();
+      await _scheduleAll();
+    }
+  }
+
+  Future<void> _pickEndDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: endDate ?? DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: '选择结束日期',
+    );
+    if (picked != null) {
+      setState(() => endDate = picked);
+      await _saveAll();
+      await _scheduleAll();
+    }
+  }
+
+  Future<void> _clearDateRange() async {
+    setState(() {
+      startDate = null;
+      endDate = null;
+    });
+    await _saveAll();
+    await _scheduleAll();
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return '未设置';
+    return '${date.month}月${date.day}日';
   }
 
   Future<void> _pickMinuteAndMessage({MinuteItem? editing}) async {
@@ -756,6 +816,24 @@ class _HomePageState extends State<HomePage> {
                   const SizedBox(height: 16),
                   Row(children: [
                     Expanded(
+                      child: _buildDateButton(
+                        '开始日期',
+                        startDate,
+                        _pickStartDate,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildDateButton(
+                        '结束日期',
+                        endDate,
+                        _pickEndDate,
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Expanded(
                       child: _buildTimeButton(
                         '起始',
                         startHour,
@@ -773,7 +851,7 @@ class _HomePageState extends State<HomePage> {
                   ]),
                   const SizedBox(height: 8),
                   Text(
-                    '生效时间：$rangeLabel',
+                    '生效时间：${_getDateRangeText()}$rangeLabel',
                     style: TextStyle(
                       color: MyApp.textColor.withOpacity(0.7),
                       fontSize: 13,
@@ -869,5 +947,53 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
+  }
+
+  Widget _buildDateButton(String label, DateTime? date, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: date != null ? MyApp.accentColor.withOpacity(0.15) : MyApp.primaryColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: date != null ? MyApp.accentColor.withOpacity(0.3) : MyApp.primaryColor.withOpacity(0.2),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.calendar_today,
+              size: 16,
+              color: date != null ? MyApp.accentColor : MyApp.textColor.withOpacity(0.5),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '${_formatDate(date)}',
+              style: TextStyle(
+                fontWeight: date != null ? FontWeight.bold : FontWeight.normal,
+                color: date != null ? MyApp.accentColor : MyApp.textColor.withOpacity(0.5),
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getDateRangeText() {
+    if (startDate == null && endDate == null) {
+      return '';
+    } else if (startDate != null && endDate != null) {
+      return '${_formatDate(startDate)} - ${_formatDate(endDate)} | ';
+    } else if (startDate != null) {
+      return '${_formatDate(startDate)} 起 | ';
+    } else {
+      return '截止 ${_formatDate(endDate)} | ';
+    }
   }
 }
