@@ -119,11 +119,102 @@ class MinuteItem {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
+  static const Color primaryColor = Color.fromRGBO(255, 179, 71, 1);
+  static const Color secondaryColor = Color(0xFFB8956B);
+  static const Color accentColor = Color(0xFFFF8C00);
+  static const Color backgroundColor = Color(0xFFFFFAF0);
+  static const Color cardColor = Colors.white;
+  static const Color textColor = Color(0xFF5D4037);
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '多分钟点报时（每点可选男女声）',
+      title: 'Billy Alarm',
       debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: primaryColor,
+          primary: primaryColor,
+          secondary: secondaryColor,
+          tertiary: accentColor,
+          surface: backgroundColor,
+          onSurface: textColor,
+        ),
+        scaffoldBackgroundColor: backgroundColor,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: primaryColor,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: true,
+        ),
+        cardTheme: CardThemeData(
+          color: cardColor,
+          elevation: 4,
+          shadowColor: primaryColor.withOpacity(0.3),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: primaryColor,
+            foregroundColor: Colors.white,
+            elevation: 4,
+            shadowColor: primaryColor.withOpacity(0.4),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: accentColor,
+          foregroundColor: Colors.white,
+          elevation: 6,
+        ),
+        switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return accentColor;
+            }
+            return Colors.grey;
+          }),
+          trackColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return accentColor.withOpacity(0.5);
+            }
+            return Colors.grey.withOpacity(0.3);
+          }),
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: cardColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.orange.shade50,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: primaryColor),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: accentColor, width: 2),
+          ),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: accentColor,
+          contentTextStyle: const TextStyle(color: Colors.white),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      ),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
@@ -499,29 +590,67 @@ class _HomePageState extends State<HomePage> {
             ? '女声'
             : '默认';
     return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: ListTile(
-        title: Text('$label  （$voiceLabel）'),
-        subtitle: Text(preview),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: MyApp.primaryColor.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Center(
+            child: Text(
+              '${item.minute.toString().padLeft(2, '0')}',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: MyApp.accentColor,
+              ),
+            ),
+          ),
+        ),
+        title: Text(
+          '$label  （$voiceLabel）',
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: MyApp.textColor,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            preview,
+            style: TextStyle(
+              color: MyApp.textColor.withOpacity(0.7),
+            ),
+          ),
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              icon: const Icon(Icons.play_arrow),
-              onPressed: () => _testItemNow(item),
-              tooltip: '立即测试',
-            ),
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () => _pickMinuteAndMessage(editing: item),
-              tooltip: '编辑',
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete),
-              onPressed: () => _removeMinuteItem(item),
-              tooltip: '删除',
-            ),
+            _buildIconButton(Icons.play_arrow, () => _testItemNow(item), '立即测试'),
+            _buildIconButton(Icons.edit, () => _pickMinuteAndMessage(editing: item), '编辑'),
+            _buildIconButton(Icons.delete, () => _removeMinuteItem(item), '删除'),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildIconButton(IconData icon, VoidCallback onPressed, String tooltip) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      decoration: BoxDecoration(
+        color: MyApp.primaryColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: MyApp.accentColor),
+        onPressed: onPressed,
+        tooltip: tooltip,
+        iconSize: 22,
       ),
     );
   }
@@ -556,66 +685,188 @@ class _HomePageState extends State<HomePage> {
     final rangeLabel =
         '${startHour.toString().padLeft(2, '0')}:00 - ${endHour.toString().padLeft(2, '0')}:00';
     return Scaffold(
-      appBar: AppBar(title: const Text('Billy Alarm')),
-      body: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text('语音播报', style: TextStyle(fontSize: 16)),
-            Switch(
-              value: enableTTS,
-              onChanged: (v) async {
-                setState(() => enableTTS = v);
-                await _saveAll();
-              },
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.alarm, size: 24),
             ),
-          ]),
-          const SizedBox(height: 12),
-          Row(children: [
-            ElevatedButton(
-                onPressed: _pickStartHour,
-                child: Text('起始小时：${startHour.toString().padLeft(2, '0')}:00')),
-            const SizedBox(width: 12),
-            ElevatedButton(
-                onPressed: _pickEndHour,
-                child: Text('结束小时：${endHour.toString().padLeft(2, '0')}:00')),
-            const SizedBox(width: 12),
-            Text('当前范围：$rangeLabel'),
-          ]),
-          const SizedBox(height: 12),
-          Row(children: [
-            ElevatedButton.icon(
-              onPressed: () => _pickMinuteAndMessage(),
-              icon: const Icon(Icons.add),
-              label: const Text('添加分钟点'),
+            const SizedBox(width: 8),
+            const Text(
+              'Billy Alarm',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+                letterSpacing: 1,
+              ),
             ),
-            const SizedBox(width: 12),
-            ElevatedButton(
-              onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                await _scheduleAll();
-                messenger.showSnackBar(
-                    const SnackBar(content: Text('已重新安排所有通知')));
-              },
-              child: const Text('重新安排'),
-            ),
-            const SizedBox(width: 12),
-            ElevatedButton(
-              onPressed: _showAvailableVoices,
-              child: const Text('查看可用 voices'),
-            ),
-          ]),
-          const SizedBox(height: 12),
-          Expanded(
-            child: minuteItems.isEmpty
-                ? const Center(child: Text('尚未添加任何分钟点'))
-                : ListView.builder(
-                    itemCount: minuteItems.length,
-                    itemBuilder: (context, index) =>
-                        _buildMinuteTile(minuteItems[index]),
-                  ),
+          ],
+        ),
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              MyApp.backgroundColor,
+              MyApp.primaryColor.withOpacity(0.1),
+            ],
           ),
-        ]),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: MyApp.primaryColor.withOpacity(0.2),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    Row(children: [
+                      Icon(Icons.record_voice_over, color: MyApp.accentColor, size: 24),
+                      const SizedBox(width: 8),
+                      const Text('语音播报', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    ]),
+                    Switch(
+                      value: enableTTS,
+                      activeColor: MyApp.accentColor,
+                      onChanged: (v) async {
+                        setState(() => enableTTS = v);
+                        await _saveAll();
+                      },
+                    ),
+                  ]),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    Expanded(
+                      child: _buildTimeButton(
+                        '起始',
+                        startHour,
+                        _pickStartHour,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildTimeButton(
+                        '结束',
+                        endHour,
+                        _pickEndHour,
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 8),
+                  Text(
+                    '生效时间：$rangeLabel',
+                    style: TextStyle(
+                      color: MyApp.textColor.withOpacity(0.7),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _pickMinuteAndMessage(),
+                  icon: const Icon(Icons.add),
+                  label: const Text('添加分钟点'),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 16),
+            Expanded(
+              child: minuteItems.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.alarm_off,
+                            size: 64,
+                            color: MyApp.primaryColor.withOpacity(0.3),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '尚未添加任何分钟点',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: MyApp.textColor.withOpacity(0.6),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '点击上方"添加分钟点"开始设置',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: MyApp.textColor.withOpacity(0.4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: minuteItems.length,
+                      itemBuilder: (context, index) =>
+                          _buildMinuteTile(minuteItems[index]),
+                    ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeButton(String label, int hour, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: MyApp.primaryColor.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: MyApp.primaryColor.withOpacity(0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '$label: ',
+              style: TextStyle(
+                color: MyApp.textColor.withOpacity(0.7),
+              ),
+            ),
+            Text(
+              '${hour.toString().padLeft(2, '0')}:00',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: MyApp.accentColor,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
