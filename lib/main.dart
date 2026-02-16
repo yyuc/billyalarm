@@ -234,7 +234,9 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int startHour = 8;
+  int startMinute = 0;
   int endHour = 22;
+  int endMinute = 0;
   DateTime? startDate;
   DateTime? endDate;
   bool enableTTS = true;
@@ -268,7 +270,9 @@ class _HomePageState extends State<HomePage> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       startHour = prefs.getInt('startHour') ?? 8;
+      startMinute = prefs.getInt('startMinute') ?? 0;
       endHour = prefs.getInt('endHour') ?? 22;
+      endMinute = prefs.getInt('endMinute') ?? 0;
       final startDateStr = prefs.getString('startDate');
       final endDateStr = prefs.getString('endDate');
       startDate = startDateStr != null ? DateTime.parse(startDateStr) : null;
@@ -285,7 +289,9 @@ class _HomePageState extends State<HomePage> {
     final encoded = jsonEncode(minuteItems.map((e) => e.toJson()).toList());
     await prefs.setString('minute_items', encoded);
     await prefs.setInt('startHour', startHour);
+    await prefs.setInt('startMinute', startMinute);
     await prefs.setInt('endHour', endHour);
+    await prefs.setInt('endMinute', endMinute);
     if (startDate != null) {
       await prefs.setString('startDate', startDate!.toIso8601String().split('T')[0]);
     } else {
@@ -453,40 +459,32 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _pickStartHour() async {
-    final int? picked = await showDialog<int>(
+    final TimeOfDay? picked = await showTimePicker(
       context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('选择起始小时'),
-        children: List.generate(24, (i) {
-          return SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, i),
-            child: Text('${i.toString().padLeft(2, '0')}:00'),
-          );
-        }),
-      ),
+      initialTime: TimeOfDay(hour: startHour, minute: startMinute),
+      helpText: '选择起始时间',
     );
     if (picked != null) {
-      setState(() => startHour = picked);
+      setState(() {
+        startHour = picked.hour;
+        startMinute = picked.minute;
+      });
       await _saveAll();
       await _scheduleAll();
     }
   }
 
   Future<void> _pickEndHour() async {
-    final int? picked = await showDialog<int>(
+    final TimeOfDay? picked = await showTimePicker(
       context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('选择结束小时'),
-        children: List.generate(24, (i) {
-          return SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, i),
-            child: Text('${i.toString().padLeft(2, '0')}:00'),
-          );
-        }),
-      ),
+      initialTime: TimeOfDay(hour: endHour, minute: endMinute),
+      helpText: '选择结束时间',
     );
     if (picked != null) {
-      setState(() => endHour = picked);
+      setState(() {
+        endHour = picked.hour;
+        endMinute = picked.minute;
+      });
       await _saveAll();
       await _scheduleAll();
     }
@@ -743,7 +741,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final rangeLabel =
-        '${startHour.toString().padLeft(2, '0')}:00 - ${endHour.toString().padLeft(2, '0')}:00';
+        '${startHour.toString().padLeft(2, '0')}:${startMinute.toString().padLeft(2, '0')} - ${endHour.toString().padLeft(2, '0')}:${endMinute.toString().padLeft(2, '0')}';
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -895,6 +893,7 @@ class _HomePageState extends State<HomePage> {
                       child: _buildTimeButton(
                         '起始',
                         startHour,
+                        startMinute,
                         _pickStartHour,
                       ),
                     ),
@@ -903,6 +902,7 @@ class _HomePageState extends State<HomePage> {
                       child: _buildTimeButton(
                         '结束',
                         endHour,
+                        endMinute,
                         _pickEndHour,
                       ),
                     ),
@@ -1000,7 +1000,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildTimeButton(String label, int hour, VoidCallback onTap) {
+  Widget _buildTimeButton(String label, int hour, int minute, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1023,7 +1023,7 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             Text(
-              '${hour.toString().padLeft(2, '0')}:00',
+              '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 color: MyApp.accentColor,
