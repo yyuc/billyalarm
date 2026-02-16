@@ -638,7 +638,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildMinuteTile(MinuteItem item) {
-    final label = '${item.minute.toString().padLeft(2, '0')} 分';
     final preview = item.message
         .replaceAll('{hour}', '--')
         .replaceAll('{minute}', item.minute.toString().padLeft(2, '0'));
@@ -649,48 +648,57 @@ class _HomePageState extends State<HomePage> {
             : '默认';
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: MyApp.primaryColor.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Center(
-            child: Text(
-              '${item.minute.toString().padLeft(2, '0')}',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: MyApp.accentColor,
-              ),
-            ),
-          ),
-        ),
-        title: Text(
-          '$label  （$voiceLabel）',
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: MyApp.textColor,
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            preview,
-            style: TextStyle(
-              color: MyApp.textColor.withOpacity(0.7),
-            ),
-          ),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildIconButton(Icons.play_arrow, () => _testItemNow(item), '立即测试'),
-            _buildIconButton(Icons.edit, () => _pickMinuteAndMessage(editing: item), '编辑'),
-            _buildIconButton(Icons.delete, () => _removeMinuteItem(item), '删除'),
+            Row(
+              children: [
+                Text(
+                  '[$voiceLabel] ',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: MyApp.accentColor.withOpacity(0.8),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    preview,
+                    style: TextStyle(
+                      color: MyApp.textColor.withOpacity(0.7),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: MyApp.primaryColor.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${item.minute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: MyApp.accentColor,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _buildIconButton(Icons.play_arrow, () => _testItemNow(item), '立即测试'),
+                _buildIconButton(Icons.edit, () => _pickMinuteAndMessage(editing: item), '编辑'),
+                _buildIconButton(Icons.delete, () => _removeMinuteItem(item), '删除'),
+              ],
+            ),
           ],
         ),
       ),
