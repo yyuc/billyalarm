@@ -236,6 +236,13 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
             );
             if (scheduled == null) continue;
 
+            // Extra safety: ensure scheduled hour/minute respects configured start/end minute boundaries
+            if (scheduled.hour == current.startHour && scheduled.minute < current.startMinute) continue;
+            if (scheduled.hour == current.endHour && scheduled.minute > current.endMinute) continue;
+
+            // Guard: ensure hour is still within configured daily range (covers any edge cases)
+            if (!_hourInRange(scheduled.hour, current.startHour, current.endHour)) continue;
+
             final timeMillis = scheduled.millisecondsSinceEpoch;
             final alignedMillis = (timeMillis ~/ 60000) * 60000;
 
