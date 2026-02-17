@@ -42,34 +42,34 @@ void main() async {
 
 class MinuteItem {
   int minute; // 0-59
-  String message;
   int idBase; // unique base id for this minute item
   String? ringtoneUri;
   String? ringtoneTitle;
+  String? remark; // user note for this alarm
 
   MinuteItem({
     required this.minute,
-    required this.message,
     required this.idBase,
     this.ringtoneUri,
     this.ringtoneTitle,
+    this.remark,
   });
 
   Map<String, dynamic> toJson() =>
       {
         'minute': minute,
-        'message': message,
         'idBase': idBase,
         'ringtoneUri': ringtoneUri,
-        'ringtoneTitle': ringtoneTitle
+        'ringtoneTitle': ringtoneTitle,
+        'remark': remark,
       };
 
   static MinuteItem fromJson(Map<String, dynamic> j) => MinuteItem(
         minute: j['minute'],
-        message: j['message'],
         idBase: j['idBase'],
         ringtoneUri: j['ringtoneUri'],
         ringtoneTitle: j['ringtoneTitle'],
+        remark: j['remark'],
       );
 }
 
@@ -198,7 +198,6 @@ class _HomePageState extends State<HomePage> {
   bool enableTTS = false;
   bool _nativeAvailable = true;
   List<MinuteItem> minuteItems = [];
-  final TextEditingController _messageController = TextEditingController();
   
 
   @override
@@ -276,6 +275,18 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _testItemNow(MinuteItem item) async {
+    final now = DateTime.now();
+    final inRange = _hourInRange(now.hour);
+    try {
+      await _native.invokeMethod('playRingtone', {'uri': item.ringtoneUri ?? ''});
+    } catch (_) {}
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('测试已触发（当前小时在范围: $inRange）'),
+    ));
+  }
+
   Future<void> _scheduleAll() async {
     // Use native AlarmManager to schedule exact alarms with RTC_WAKEUP
     final prefs = await SharedPreferences.getInstance();
@@ -326,20 +337,19 @@ class _HomePageState extends State<HomePage> {
     return scheduled;
   }
 
-  Future<void> _addMinuteItem(int minute, String message) async {
+  Future<void> _addMinuteItem(int minute) async {
     final idBase = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
-    final item = MinuteItem(minute: minute, message: message, idBase: idBase);
+    final item = MinuteItem(minute: minute, idBase: idBase);
     minuteItems.add(item);
     await _saveAll();
     await _scheduleAll();
     setState(() {});
   }
 
-  Future<void> _editMinuteItem(MinuteItem old, int minute, String message) async {
+  Future<void> _editMinuteItem(MinuteItem old, int minute) async {
     final idx = minuteItems.indexWhere((e) => e.idBase == old.idBase);
     if (idx >= 0) {
       minuteItems[idx].minute = minute;
-      minuteItems[idx].message = message;
       await _saveAll();
       await _scheduleAll();
       setState(() {});
@@ -430,7 +440,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _pickMinuteAndMessage({MinuteItem? editing}) async {
-    _messageController.text = editing?.message ?? "现在是 {hour} 点 {minute} 分";
     final int? picked = await showDialog<int>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -444,38 +453,10 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     if (picked == null || !mounted) return;
-    final message = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        String tempMsg = _messageController.text;
-        return StatefulBuilder(builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('设置播报文本（支持 {hour} 和 {minute}）'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: _messageController,
-                  maxLines: 3,
-                  onChanged: (v) => tempMsg = v,
-                  decoration: const InputDecoration(hintText: '例如：现在是 {hour} 点 {minute} 分'),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-              TextButton(
-                  onPressed: () => Navigator.pop(context, tempMsg.trim()),
-                  child: const Text('确定')),
-            ],
-          );
-        });
-      },
-    );
-    if (message == null || !mounted) return;
     // pick system ringtone (if available)
     String? chosenUri = editing?.ringtoneUri;
     String? chosenTitle = editing?.ringtoneTitle;
+    String? chosenRemark = editing?.remark;
     final ringtones = await _getSystemRingtones();
     if (ringtones.isNotEmpty) {
       final pick = await showDialog<int?>(
@@ -484,7 +465,7 @@ class _HomePageState extends State<HomePage> {
           int? previewIndex;
           return StatefulBuilder(builder: (context, setState) {
             return AlertDialog(
-              title: const Text('选择铃声（点击播放预听）'),
+              title: const Text('选择铃声'),
               content: SizedBox(
                 width: double.maxFinite,
                 child: ListView.builder(
@@ -555,19 +536,54 @@ class _HomePageState extends State<HomePage> {
         chosenTitle = ringtones[pick]['title'];
       }
     }
+    // ask for remark
+    if (!mounted) return;
+    final remarkResult = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController(text: chosenRemark ?? '');
+        return AlertDialog(
+          title: const Text('添加备注（可选）'),
+          content: TextField(
+            maxLines: 3,
+            controller: controller,
+            decoration: const InputDecoration(
+              hintText: '例如：工作会议、锻炼时间',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+    if (remarkResult != null) {
+      chosenRemark = remarkResult;
+    }
     if (editing == null) {
       final idBase = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
-      final item = MinuteItem(minute: picked, message: message, idBase: idBase, ringtoneUri: chosenUri, ringtoneTitle: chosenTitle);
+      final item = MinuteItem(
+        minute: picked,
+        idBase: idBase,
+        ringtoneUri: chosenUri,
+        ringtoneTitle: chosenTitle,
+        remark: chosenRemark,
+      );
       minuteItems.add(item);
       await _saveAll();
       await _scheduleAll();
       setState(() {});
     } else {
-      await _editMinuteItem(editing, picked, message);
+      await _editMinuteItem(editing, picked);
       final idx = minuteItems.indexWhere((e) => e.idBase == editing.idBase);
       if (idx >= 0) {
         minuteItems[idx].ringtoneUri = chosenUri;
         minuteItems[idx].ringtoneTitle = chosenTitle;
+        minuteItems[idx].remark = chosenRemark;
         await _saveAll();
         await _scheduleAll();
         setState(() {});
@@ -575,25 +591,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _testItemNow(MinuteItem item) async {
-    final now = DateTime.now();
-    final inRange = _hourInRange(now.hour);
-    final text = item.message
-        .replaceAll('{hour}', now.hour.toString())
-        .replaceAll('{minute}', item.minute.toString().padLeft(2, '0'));
-    try {
-      await _native.invokeMethod('playRingtone', {'uri': item.ringtoneUri ?? ''});
-    } catch (_) {}
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('测试已触发（当前小时在范围: $inRange）'),
-    ));
-  }
-
   Widget _buildMinuteTile(MinuteItem item) {
-    final preview = item.message
-        .replaceAll('{hour}', '--')
-        .replaceAll('{minute}', item.minute.toString().padLeft(2, '0'));
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Padding(
@@ -601,36 +599,68 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              preview,
-              style: TextStyle(
-                color: MyApp.textColor.withOpacity(0.7),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (item.remark != null && item.remark!.isNotEmpty)
+                        Text(
+                            item.remark!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: MyApp.textColor.withOpacity(0.6),
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        if (item.ringtoneTitle != null)
+                         Text(
+                            ' - ${item.ringtoneTitle!}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: MyApp.accentColor,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Row(
+              mainAxisAlignment: MainAxisAlignment.start,
               children: [
                 Container(
-                  width: 50,
-                  height: 50,
+                  width: 60,
+                  height: 60,
                   decoration: BoxDecoration(
-                    color: MyApp.primaryColor.withOpacity(0.2),
+                    color: MyApp.accentColor.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Center(
-                    child: Text(
-                      '${item.minute.toString().padLeft(2, '0')}',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: MyApp.accentColor,
-                      ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '${item.minute.toString().padLeft(2, '0')}分',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: MyApp.accentColor,
+                          ),
+                        )
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: 12),
                 _buildIconButton(Icons.play_arrow, () => _testItemNow(item), '立即测试'),
+                SizedBox(width: 12),
                 _buildIconButton(Icons.edit, () => _pickMinuteAndMessage(editing: item), '编辑'),
+                SizedBox(width: 12),
                 _buildIconButton(Icons.delete, () => _removeMinuteItem(item), '删除'),
               ],
             ),
@@ -741,7 +771,7 @@ class _HomePageState extends State<HomePage> {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: Text(
-                            '闹铃起始日期',
+                            '闹铃周期',
                             style: TextStyle(
                               color: MyApp.textColor.withOpacity(0.6),
                               fontSize: 12,
