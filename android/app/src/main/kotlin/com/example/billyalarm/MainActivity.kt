@@ -127,23 +127,29 @@ class MainActivity : FlutterActivity() {
 			intent.putExtra("uri", uriStr)
 			val pending = PendingIntent.getBroadcast(this, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or getMutableFlag())
 			
+			// Ensure alignment to exact minute start: HH:MM:00.000
+			val alignedTimeMillis = (timeMillis / 60000L) * 60000L
+			
 			try {
-				// Try exact alarm first (requires SCHEDULE_EXACT_ALARM permission)
+				// Use exact time aligned to minute start
 				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-					am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeMillis, pending)
-					Log.d("MainActivity", "setExactAndAllowWhileIdle scheduled id=$id")
+					am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, alignedTimeMillis, pending)
+					val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(java.util.Date(alignedTimeMillis))
+					Log.d("MainActivity", "✓ Scheduled EXACT id=$id time=$dateStr (${alignedTimeMillis}ms)")
 				} else {
-					am.setExact(AlarmManager.RTC_WAKEUP, timeMillis, pending)
-					Log.d("MainActivity", "setExact scheduled id=$id")
+					am.setExact(AlarmManager.RTC_WAKEUP, alignedTimeMillis, pending)
+					val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(java.util.Date(alignedTimeMillis))
+					Log.d("MainActivity", "✓ Scheduled EXACT id=$id time=$dateStr (${alignedTimeMillis}ms)")
 				}
 			} catch (e: SecurityException) {
 				// Fallback: use setAndAllowWhileIdle (no special permission needed)
-				Log.w("MainActivity", "Exact alarm failed, falling back to setAndAllowWhileIdle: ${e.message}")
-				am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeMillis, pending)
-				Log.d("MainActivity", "setAndAllowWhileIdle scheduled id=$id")
+				Log.w("MainActivity", "⚠ Permission denied for exact alarm, falling back to setAndAllowWhileIdle")
+				am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, alignedTimeMillis, pending)
+				val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(java.util.Date(alignedTimeMillis))
+				Log.d("MainActivity", "✓ Scheduled FALLBACK id=$id time=$dateStr (${alignedTimeMillis}ms)")
 			}
 		} catch (e: Exception) {
-			Log.e("MainActivity", "schedule failed completely", e)
+			Log.e("MainActivity", "✗ Schedule failed: ${e.message}", e)
 		}
 	}
 

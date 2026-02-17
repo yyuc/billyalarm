@@ -17,7 +17,9 @@ class AlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val uriStr = intent.getStringExtra("uri") ?: ""
-        Log.d("AlarmReceiver", "onReceive uri=$uriStr")
+        val now = System.currentTimeMillis()
+        val nowStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(java.util.Date(now))
+        Log.d("AlarmReceiver", "🔔 onReceive at $nowStr (id=${intent.action}) uri=${if(uriStr.isEmpty()) "DEFAULT" else uriStr.take(50)}")
         try {
             val uri: Uri = if (uriStr.isEmpty()) RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM) else Uri.parse(uriStr)
             ringtone = RingtoneManager.getRingtone(context, uri)
@@ -49,7 +51,8 @@ class AlarmReceiver : BroadcastReceiver() {
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "billyalarm:alarm")
             wakeLock?.acquire(10 * 60 * 1000L)
             ringtone?.play()
-            Log.d("AlarmReceiver", "ringtone play started")
+            val playTime = java.text.SimpleDateFormat("HH:mm:ss.SSS").format(java.util.Date(System.currentTimeMillis()))
+            Log.d("AlarmReceiver", "🔊 Ringtone playing at $playTime")
         } catch (e: Exception) {
             Log.e("AlarmReceiver", "play failed", e)
         }

@@ -311,13 +311,20 @@ class _HomePageState extends State<HomePage> {
       }
       int offset = 0;
       for (final h in hours) {
-        var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, h, item.minute);
-        if (scheduled.isBefore(now)) scheduled = scheduled.add(const Duration(days: 1));
+        // Create time using TZDateTime to respect Asia/Shanghai timezone
+        var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, h, item.minute, 0, 0);
+        if (scheduled.isBefore(now)) scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day + 1, h, item.minute, 0, 0);
+        
+        // Double-check: ensure milliseconds are at exact minute start (0 seconds = 0 milliseconds within minute)
+        final timeMillis = scheduled.millisecondsSinceEpoch;
+        // Verify no seconds/milliseconds component
+        final alignedMillis = (timeMillis ~/ 60000) * 60000; // Force to exact minute start
+        
         final id = item.idBase + offset;
         try {
           await _native.invokeMethod('scheduleAlarm', {
             'id': id,
-            'time': scheduled.millisecondsSinceEpoch,
+            'time': alignedMillis,
             'uri': item.ringtoneUri ?? ''
           });
           newScheduled.add(id.toString());
@@ -635,8 +642,8 @@ class _HomePageState extends State<HomePage> {
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
                 Container(
-                  width: 60,
-                  height: 60,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
                     color: MyApp.accentColor.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
