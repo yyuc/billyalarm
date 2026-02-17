@@ -227,11 +227,14 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
           
           int offset = 0;
           for (final h in hours) {
-            // Create time using TZDateTime to respect Asia/Shanghai timezone
-            var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, h, item.minute, 0, 0);
-            if (scheduled.isBefore(now)) {
-              scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day + 1, h, item.minute, 0, 0);
-            }
+            final scheduled = _getNextScheduledForHourMinute(
+              h,
+              item.minute,
+              now,
+              current.startDate,
+              current.endDate,
+            );
+            if (scheduled == null) continue;
 
             final timeMillis = scheduled.millisecondsSinceEpoch;
             final alignedMillis = (timeMillis ~/ 60000) * 60000;
@@ -295,5 +298,51 @@ class AlarmBloc extends Bloc<AlarmEvent, AlarmState> {
     } else {
       return h >= startHour || h <= endHour;
     }
+  }
+
+  tz.TZDateTime? _getNextScheduledForHourMinute(
+    int hour,
+    int minute,
+    tz.TZDateTime now,
+    DateTime? startDate,
+    DateTime? endDate,
+  ) {
+    // If endDate is before today, nothing to schedule
+    if (endDate != null) {
+      final endDay = DateTime(endDate.year, endDate.month, endDate.day);
+      final today = DateTime(now.year, now.month, now.day);
+      if (today.isAfter(endDay)) return null;
+    }
+
+    // Start from either today or the configured startDate (whichever is later)
+    DateTime candidate = DateTime(now.year, now.month, now.day);
+    if (startDate != null) {
+      final sd = DateTime(startDate.year, startDate.month, startDate.day);
+      if (sd.isAfter(candidate)) candidate = sd;
+    }
+
+    var scheduled = tz.TZDateTime(tz.local, candidate.year, candidate.month, candidate.day, hour, minute);
+
+    // If scheduled is before now, move to next day
+    if (scheduled.isBefore(now)) scheduled = scheduled.add(const Duration(days: 1));
+
+    // If startDate is provided and scheduled date is still before it, move to startDate
+    if (startDate != null) {
+      final sd = DateTime(startDate.year, startDate.month, startDate.day);
+      final scheduledDateOnly = DateTime(scheduled.year, scheduled.month, scheduled.day);
+      if (scheduledDateOnly.isBefore(sd)) {
+        scheduled = tz.TZDateTime(tz.local, sd.year, sd.month, sd.day, hour, minute);
+        if (scheduled.isBefore(now)) scheduled = scheduled.add(const Duration(days: 1));
+      }
+    }
+
+    // Ensure scheduled does not exceed endDate
+    if (endDate != null) {
+      final ed = DateTime(endDate.year, endDate.month, endDate.day);
+      final scheduledDateOnly = DateTime(scheduled.year, scheduled.month, scheduled.day);
+      if (scheduledDateOnly.isAfter(ed)) return null;
+    }
+
+    return scheduled;
   }
 }
