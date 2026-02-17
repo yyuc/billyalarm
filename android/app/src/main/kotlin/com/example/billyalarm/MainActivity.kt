@@ -10,6 +10,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
+import android.content.ActivityNotFoundException
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -23,6 +25,18 @@ class MainActivity : FlutterActivity() {
 		super.configureFlutterEngine(flutterEngine)
 		MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "billyalarm/native").setMethodCallHandler { call, result ->
 			when (call.method) {
+				"canScheduleExactAlarms" -> {
+					try {
+						val am = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+							result.success(am.canScheduleExactAlarms())
+						} else {
+							result.success(true)
+						}
+					} catch (e: Exception) {
+						result.error("ERR", e.message, null)
+					}
+				}
 				"getRingtones" -> {
 					try {
 						val rm = RingtoneManager(this)
@@ -123,12 +137,41 @@ class MainActivity : FlutterActivity() {
 	private fun scheduleExact(id: Int, timeMillis: Long, uriStr: String) {
 		try {
 			val am = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-			val intent = Intent(this, AlarmReceiver::class.java)
-			intent.putExtra("uri", uriStr)
-			val pending = PendingIntent.getBroadcast(this, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or getMutableFlag())
-			
 			// Ensure alignment to exact minute start: HH:MM:00.000
 			val alignedTimeMillis = (timeMillis / 60000L) * 60000L
+			val intent = Intent(this, AlarmReceiver::class.java)
+			intent.putExtra("uri", uriStr)
+			// include the scheduled target time so the receiver can align playback precisely
+			intent.putExtra("scheduledTime", alignedTimeMillis)
+			val pending = PendingIntent.getBroadcast(this, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or getMutableFlag())
+
+			// If the app cannot schedule exact alarms (Android 12+), prompt the user and use fallback
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+				if (!am.canScheduleExactAlarms()) {
+					Log.w("MainActivity", "⚠ App cannot schedule exact alarms; prompting user to allow exact alarms")
+					try {
+						val i = Intent("android.app.action.REQUEST_SCHEDULE_EXACT_ALARM")
+						i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+						startActivity(i)
+					} catch (e: ActivityNotFoundException) {
+						Log.w("MainActivity", "exact alarm permission activity not found, falling back to app settings", e)
+						try {
+							val pi = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+							pi.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+							startActivity(pi)
+						} catch (e2: Exception) {
+							Log.w("MainActivity", "failed to open app settings fallback", e2)
+						}
+					} catch (e: Exception) {
+						Log.w("MainActivity", "failed to launch exact alarm permission intent", e)
+					}
+					// schedule fallback so alarm still fires (may be delayed by OS)
+					am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, alignedTimeMillis, pending)
+					val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(java.util.Date(alignedTimeMillis))
+					Log.d("MainActivity", "✓ Scheduled FALLBACK id=$id time=$dateStr (${alignedTimeMillis}ms)")
+					return
+				}
+			}
 			
 			try {
 				// Use exact time aligned to minute start
