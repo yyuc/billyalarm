@@ -3,19 +3,32 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-final FlutterTts flutterTts = FlutterTts();
+const MethodChannel _native = MethodChannel('billyalarm/native');
 
-Future<void> _speakWithGender(String text) async {
-  await flutterTts.setEngine("com.iflytek.speechsuite");
-  await flutterTts.setLanguage("zh-CN");
-  await flutterTts.setSpeechRate(0.5);
-  await flutterTts.setPitch(1.0);
-  await flutterTts.speak(text);
+@pragma('vm:entry-point')
+void alarmCallback(int id) async {
+  // This runs in background when alarm fires. It should be fast and use native playback.
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('minute_items') ?? '[]';
+    final List decoded = jsonDecode(raw);
+    final items = decoded.map((e) => MinuteItem.fromJson(e)).toList();
+    // find matching item by idBase match (we scheduled with id = idBase + hourOffset)
+    for (final item in items) {
+      // scheduled ids were created as item.idBase + offset where offset < 100000
+      final base = item.idBase;
+      if (id >= base && id < base + 100000) {
+        final uri = item.ringtoneUri;
+        await _native.invokeMethod('playRingtone', {'uri': uri ?? ''});
+        break;
+      }
+    }
+  } catch (_) {}
 }
 
 void main() async {
@@ -31,23 +44,32 @@ class MinuteItem {
   int minute; // 0-59
   String message;
   int idBase; // unique base id for this minute item
-  String voiceGender; // 'default' | 'male' | 'female'
+  String? ringtoneUri;
+  String? ringtoneTitle;
 
   MinuteItem({
     required this.minute,
     required this.message,
     required this.idBase,
-    required this.voiceGender,
+    this.ringtoneUri,
+    this.ringtoneTitle,
   });
 
   Map<String, dynamic> toJson() =>
-      {'minute': minute, 'message': message, 'idBase': idBase, 'voiceGender': voiceGender};
+      {
+        'minute': minute,
+        'message': message,
+        'idBase': idBase,
+        'ringtoneUri': ringtoneUri,
+        'ringtoneTitle': ringtoneTitle
+      };
 
   static MinuteItem fromJson(Map<String, dynamic> j) => MinuteItem(
         minute: j['minute'],
         message: j['message'],
         idBase: j['idBase'],
-        voiceGender: j['voiceGender'] ?? 'default',
+        ringtoneUri: j['ringtoneUri'],
+        ringtoneTitle: j['ringtoneTitle'],
       );
 }
 
@@ -173,51 +195,37 @@ class _HomePageState extends State<HomePage> {
   int endMinute = 0;
   DateTime? startDate;
   DateTime? endDate;
-  bool enableTTS = true;
+  bool enableTTS = false;
+  bool _nativeAvailable = true;
   List<MinuteItem> minuteItems = [];
   final TextEditingController _messageController = TextEditingController();
-
-  // 可用 voices（调试/匹配用）
-  List<dynamic> availableVoices = [];
+  
 
   @override
   void initState() {
     super.initState();
-    _loadAll().then((_) async {
-      await _loadAvailableVoices();
-    });
-    Timer.periodic(const Duration(seconds: 50), (_) {
-      _checkAndSpeak();
-    });
+    _initAlarmAndLoad();
   }
 
-  void _checkAndSpeak() {
-    if (!mounted) return;
-    final now = DateTime.now();
-    final currentMinute = now.minute;
-    final currentHour = now.hour;
-    
-    if (!_hourInRange(currentHour)) return;
-    
-    for (final item in minuteItems) {
-      if (item.minute == currentMinute) {
-        final text = item.message
-            .replaceAll('{hour}', currentHour.toString())
-            .replaceAll('{minute}', item.minute.toString().padLeft(2, '0'));
-        _speakWithGender(text);
-        break;
-      }
-    }
-  }
-
-  Future<void> _loadAvailableVoices() async {
+  Future<void> _initAlarmAndLoad() async {
+    await _loadAll();
+    // schedule existing items via native scheduler
+    // ensure app has exact-alarm permission on Android 12+
     try {
-      final voices = await flutterTts.getVoices;
-      setState(() {
-        availableVoices = voices ?? [];
-      });
-    } catch (_) {
-      availableVoices = [];
+      await _native.invokeMethod('ensureExactAlarmPermission');
+    } catch (_) {}
+    await _scheduleAll();
+  }
+
+  // The real work is done via Android AlarmManager callbacks; keep UI responsive.
+
+  Future<List<Map<String, String>>> _getSystemRingtones() async {
+    try {
+      final res = await _native.invokeMethod('getRingtones');
+      final List list = res as List? ?? [];
+      return list.map<Map<String, String>>((e) => Map<String, String>.from(e)).toList();
+    } catch (e) {
+      return [];
     }
   }
 
@@ -232,7 +240,7 @@ class _HomePageState extends State<HomePage> {
       final endDateStr = prefs.getString('endDate');
       startDate = startDateStr != null ? DateTime.parse(startDateStr) : null;
       endDate = endDateStr != null ? DateTime.parse(endDateStr) : null;
-      enableTTS = prefs.getBool('enableTTS') ?? true;
+      enableTTS = false; // TTS removed; keep false
       final raw = prefs.getString('minute_items') ?? '[]';
       final List decoded = jsonDecode(raw);
       minuteItems = decoded.map((e) => MinuteItem.fromJson(e)).toList();
@@ -257,7 +265,7 @@ class _HomePageState extends State<HomePage> {
     } else {
       await prefs.remove('endDate');
     }
-    await prefs.setBool('enableTTS', enableTTS);
+    // no TTS setting
   }
 
   bool _hourInRange(int h) {
@@ -269,7 +277,45 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _scheduleAll() async {
-    // 通知调度已移除，现在使用 Timer 每30秒检查一次
+    // Use native AlarmManager to schedule exact alarms with RTC_WAKEUP
+    final prefs = await SharedPreferences.getInstance();
+    final scheduledRaw = prefs.getStringList('scheduled_ids') ?? [];
+    for (final s in scheduledRaw) {
+      try {
+        final id = int.parse(s);
+        try {
+          await _native.invokeMethod('cancelAlarm', {'id': id});
+        } catch (_) {}
+      } catch (_) {}
+    }
+    final List<String> newScheduled = [];
+    final now = tz.TZDateTime.now(tz.local);
+    for (final item in minuteItems) {
+      final hours = <int>[];
+      if (startHour <= endHour) {
+        for (int h = startHour; h <= endHour; h++) hours.add(h);
+      } else {
+        for (int h = startHour; h < 24; h++) hours.add(h);
+        for (int h = 0; h <= endHour; h++) hours.add(h);
+      }
+      int offset = 0;
+      for (final h in hours) {
+        var scheduled = tz.TZDateTime(tz.local, now.year, now.month, now.day, h, item.minute);
+        if (scheduled.isBefore(now)) scheduled = scheduled.add(const Duration(days: 1));
+        final id = item.idBase + offset;
+        try {
+          await _native.invokeMethod('scheduleAlarm', {
+            'id': id,
+            'time': scheduled.millisecondsSinceEpoch,
+            'uri': item.ringtoneUri ?? ''
+          });
+          newScheduled.add(id.toString());
+        } catch (_) {}
+        offset += 1;
+        if (offset > 99999) break;
+      }
+    }
+    await prefs.setStringList('scheduled_ids', newScheduled);
   }
 
   tz.TZDateTime _nextInstanceOfTime(int hour, int minute) {
@@ -282,7 +328,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _addMinuteItem(int minute, String message) async {
     final idBase = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
-    final item = MinuteItem(minute: minute, message: message, idBase: idBase, voiceGender: 'default');
+    final item = MinuteItem(minute: minute, message: message, idBase: idBase);
     minuteItems.add(item);
     await _saveAll();
     await _scheduleAll();
@@ -427,10 +473,105 @@ class _HomePageState extends State<HomePage> {
       },
     );
     if (message == null || !mounted) return;
+    // pick system ringtone (if available)
+    String? chosenUri = editing?.ringtoneUri;
+    String? chosenTitle = editing?.ringtoneTitle;
+    final ringtones = await _getSystemRingtones();
+    if (ringtones.isNotEmpty) {
+      final pick = await showDialog<int?>(
+        context: context,
+        builder: (context) {
+          int? previewIndex;
+          return StatefulBuilder(builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('选择铃声（点击播放预听）'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: ringtones.length,
+                  itemBuilder: (ctx, i) {
+                    final r = ringtones[i];
+                    final isPreviewing = previewIndex == i;
+                    return ListTile(
+                      title: Text(r['title'] ?? '铃声'),
+                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                        IconButton(
+                          icon: Icon(isPreviewing ? Icons.stop : Icons.play_arrow),
+                          onPressed: () async {
+                            try {
+                              if (isPreviewing) {
+                                await _native.invokeMethod('stopRingtone');
+                                setState(() => previewIndex = null);
+                              } else {
+                                await _native.invokeMethod('playRingtone', {'uri': r['uri'] ?? ''});
+                                setState(() => previewIndex = i);
+                              }
+                            } catch (_) {}
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.check),
+                          onPressed: () async {
+                            try {
+                              await _native.invokeMethod('stopRingtone');
+                            } catch (_) {}
+                            Navigator.pop(context, i);
+                          },
+                        ),
+                      ]),
+                      onTap: () async {
+                        // toggle preview on tap
+                        try {
+                          if (isPreviewing) {
+                            await _native.invokeMethod('stopRingtone');
+                            setState(() => previewIndex = null);
+                          } else {
+                            await _native.invokeMethod('playRingtone', {'uri': r['uri'] ?? ''});
+                            setState(() => previewIndex = i);
+                          }
+                        } catch (_) {}
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () async {
+                      try {
+                        await _native.invokeMethod('stopRingtone');
+                      } catch (_) {}
+                      Navigator.pop(context, null);
+                    },
+                    child: const Text('取消')),
+              ],
+            );
+          });
+        },
+      );
+      if (pick != null) {
+        chosenUri = ringtones[pick]['uri'];
+        chosenTitle = ringtones[pick]['title'];
+      }
+    }
     if (editing == null) {
-      await _addMinuteItem(picked, message);
+      final idBase = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
+      final item = MinuteItem(minute: picked, message: message, idBase: idBase, ringtoneUri: chosenUri, ringtoneTitle: chosenTitle);
+      minuteItems.add(item);
+      await _saveAll();
+      await _scheduleAll();
+      setState(() {});
     } else {
       await _editMinuteItem(editing, picked, message);
+      final idx = minuteItems.indexWhere((e) => e.idBase == editing.idBase);
+      if (idx >= 0) {
+        minuteItems[idx].ringtoneUri = chosenUri;
+        minuteItems[idx].ringtoneTitle = chosenTitle;
+        await _saveAll();
+        await _scheduleAll();
+        setState(() {});
+      }
     }
   }
 
@@ -440,7 +581,9 @@ class _HomePageState extends State<HomePage> {
     final text = item.message
         .replaceAll('{hour}', now.hour.toString())
         .replaceAll('{minute}', item.minute.toString().padLeft(2, '0'));
-    await _speakWithGender(text);
+    try {
+      await _native.invokeMethod('playRingtone', {'uri': item.ringtoneUri ?? ''});
+    } catch (_) {}
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('测试已触发（当前小时在范围: $inRange）'),
@@ -513,29 +656,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // 显示可用 voices（调试）
+  // TTS removed; native ringtone listing available via system dialog
   Future<void> _showAvailableVoices() async {
-    await _loadAvailableVoices();
-    final names = availableVoices.map((v) {
-      try {
-        final map = v is Map ? v : Map<String, dynamic>.from(v);
-        return '${map['name'] ?? map['voice'] ?? ''} (${map['locale'] ?? map['language'] ?? ''}) ${map['gender'] ?? ''}';
-      } catch (_) {
-        return v.toString();
-      }
-    }).join('\n');
     if (!mounted) return;
-    showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-              title: const Text('可用 TTS voices（调试）'),
-              content: SizedBox(
-                  width: double.maxFinite,
-                  child: SingleChildScrollView(child: Text(names.isEmpty ? '无' : names))),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))
-              ],
-            ));
+    showDialog(context: context, builder: (_) => AlertDialog(title: const Text('已移除'), content: const Text('语音播报已移除，使用铃声播放'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))]));
   }
 
   @override
@@ -596,20 +720,12 @@ class _HomePageState extends State<HomePage> {
               ),
               child: Column(
                 children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.start, children: [
                     Row(children: [
-                      Icon(Icons.record_voice_over, color: MyApp.accentColor, size: 24),
+                      Icon(Icons.music_note, color: MyApp.accentColor, size: 24),
                       const SizedBox(width: 8),
-                      const Text('语音播报', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      const Text('铃声播放', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                     ]),
-                    Switch(
-                      value: enableTTS,
-                      activeColor: MyApp.accentColor,
-                      onChanged: (v) async {
-                        setState(() => enableTTS = v);
-                        await _saveAll();
-                      },
-                    ),
                   ]),
                   const SizedBox(height: 16),
                   Container(

@@ -11,7 +11,8 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  flutter_tts: ^3.8.0
+  # removed flutter_tts (replaced with native ringtone playback)
+  android_alarm_manager_plus: ^5.0.0
   timezone: ^0.9.0
   shared_preferences: ^2.2.2
 
